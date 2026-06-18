@@ -1161,3 +1161,181 @@ body {
     color: #fff;
     text-shadow: 0 0 5px var(--primary-glow);
 }
+
+/* Library Section (Drafts & Exports) */
+.library-section {
+    margin-top: 32px;
+}
+
+.library-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+@media (max-width: 900px) {
+    .library-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.library-card {
+    display: flex;
+    flex-direction: column;
+    height: 420px;
+}
+
+.library-card .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-glass);
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+    gap: 12px;
+}
+
+.library-card .card-header h3 {
+    margin-bottom: 0 !important;
+    border-bottom: none !important;
+    padding-bottom: 0 !important;
+}
+
+.drafts-list, .exports-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-right: 4px;
+}
+
+/* Custom Scrollbar for lists */
+.drafts-list::-webkit-scrollbar, .exports-list::-webkit-scrollbar {
+    width: 6px;
+}
+.drafts-list::-webkit-scrollbar-track, .exports-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.drafts-list::-webkit-scrollbar-thumb, .exports-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+}
+.drafts-list::-webkit-scrollbar-thumb:hover, .exports-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* Item cards in the lists */
+.library-item {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    transition: var(--transition-smooth);
+}
+
+.library-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--border-glass-glow);
+}
+
+.item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0; /* allows text overflow ellipsis */
+    flex-grow: 1;
+}
+
+.item-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.item-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.item-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.btn-icon {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition-smooth);
+}
+
+.btn-icon:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-main);
+}
+
+.btn-icon.btn-danger-hover:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger-hover);
+}
+
+/* Empty State */
+.library-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    height: 100%;
+    color: var(--text-dark);
+    text-align: center;
+}
+
+.library-empty i {
+    font-size: 40px;
+}
+
+.library-empty p {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Small buttons */
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+}
+
+/* Edit Title Input */
+.title-edit-input {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid var(--primary);
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    outline: none;
+    width: 100%;
+}

@@ -234,6 +234,152 @@ app.get('/api/status/:jobId', (req, res) => {
     res.json(job);
 });
 
+// Endpoint: Delete files (used when a step or draft is deleted)
+app.post('/api/delete-files', (req, res) => {
+    const { files } = req.body;
+    if (!files || !Array.isArray(files)) {
+        return res.status(400).json({ error: 'Files array is required' });
+    }
+
+    const deleted = [];
+    const failed = [];
+
+    files.forEach(filePath => {
+        if (!filePath) return;
+        // Basic security check: resolve path and verify it is inside the uploads folder
+        const absPath = path.resolve(__dirname, filePath);
+        const uploadsDir = path.resolve(__dirname, 'uploads');
+        
+        if (!absPath.startsWith(uploadsDir)) {
+            failed.push({ file: filePath, error: 'Access denied: outside uploads directory' });
+            return;
+        }
+
+        if (fs.existsSync(absPath)) {
+            try {
+                // Check if it is a directory junction or symbolic link first
+                const stats = fs.lstatSync(absPath);
+                if (stats.isFile()) {
+                    fs.unlinkSync(absPath);
+                    deleted.push(filePath);
+                } else {
+                    failed.push({ file: filePath, error: 'Not a file' });
+                }
+            } catch (err) {
+                console.error(`Failed to delete file ${absPath}:`, err);
+                failed.push({ file: filePath, error: err.message });
+            }
+        } else {
+            // If file doesn't exist, count it as deleted/gone
+            deleted.push(filePath);
+        }
+    });
+
+    res.json({ success: true, deleted, failed });
+});
+
+// Endpoint: List all exported videos
+app.get('/api/exports', (req, res) => {
+    try {
+        if (!fs.existsSync(EXPORTS_DIR)) {
+            return res.json([]);
+        }
+
+        const files = fs.readdirSync(EXPORTS_DIR);
+        const videos = [];
+
+        files.forEach(filename => {
+            if (filename.toLowerCase().endsWith('.mp4')) {
+                const absPath = path.join(EXPORTS_DIR, filename);
+                try {
+                    const stats = fs.statSync(absPath);
+                    videos.push({
+                        filename: filename,
+                        url: `/exports/${filename}`,
+                        size: stats.size,
+                        createdAt: stats.birthtimeMs || stats.mtimeMs
+                    });
+                } catch (e) {
+                    console.error(`Error reading stats for ${filename}:`, e);
+                }
+            }
+        });
+
+        // Sort by creation time descending (newest first)
+        videos.sort((a, b) => b.createdAt - a.createdAt);
+        res.json(videos);
+    } catch (error) {
+        console.error('Failed to read exports directory:', error);
+        res.status(500).json({ error: 'Failed to retrieve exports' });
+    }
+});
+
+// Endpoint: Rename exported video
+app.post('/api/exports/rename', (req, res) => {
+    const { oldFilename, newFilename } = req.body;
+    if (!oldFilename || !newFilename) {
+        return res.status(400).json({ error: 'oldFilename and newFilename are required' });
+    }
+
+    // Ensure they both have .mp4 extension
+    let cleanOld = oldFilename;
+    let cleanNew = newFilename;
+    if (!cleanOld.toLowerCase().endsWith('.mp4')) cleanOld += '.mp4';
+    if (!cleanNew.toLowerCase().endsWith('.mp4')) cleanNew += '.mp4';
+
+    const oldPath = path.join(EXPORTS_DIR, cleanOld);
+    const newPath = path.join(EXPORTS_DIR, cleanNew);
+
+    // Security check
+    if (!path.resolve(oldPath).startsWith(path.resolve(EXPORTS_DIR)) || 
+        !path.resolve(newPath).startsWith(path.resolve(EXPORTS_DIR))) {
+        return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (!fs.existsSync(oldPath)) {
+        return res.status(404).json({ error: 'Source video file not found' });
+    }
+
+    if (fs.existsSync(newPath)) {
+        return res.status(400).json({ error: 'A video file with the new name already exists' });
+    }
+
+    try {
+        fs.renameSync(oldPath, newPath);
+        res.json({ success: true, filename: cleanNew, url: `/exports/${cleanNew}` });
+    } catch (error) {
+        console.error(`Failed to rename file from ${cleanOld} to ${cleanNew}:`, error);
+        res.status(500).json({ error: `Rename failed: ${error.message}` });
+    }
+});
+
+// Endpoint: Delete exported video
+app.post('/api/exports/delete', (req, res) => {
+    const { filename } = req.body;
+    if (!filename) {
+        return res.status(400).json({ error: 'Filename is required' });
+    }
+
+    const filePath = path.join(EXPORTS_DIR, filename);
+
+    // Security check
+    if (!path.resolve(filePath).startsWith(path.resolve(EXPORTS_DIR))) {
+        return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (fs.existsSync(filePath)) {
+        try {
+            fs.unlinkSync(filePath);
+            res.json({ success: true });
+        } catch (error) {
+            console.error(`Failed to delete export file ${filename}:`, error);
+            res.status(500).json({ error: `Delete failed: ${error.message}` });
+        }
+    } else {
+        res.json({ success: true, message: 'File did not exist' });
+    }
+});
+
 // Async function to handle video rendering and concatenation
 async function processVideoJob(jobId, steps, width, height, fit) {
     const job = jobs[jobId];

@@ -334,10 +334,12 @@ function setupStepEvents(stepCard, step) {
             e.stopPropagation();
             const stepObj = steps.find(s => s.id === id);
             if (stepObj) {
+                const pathToDelete = stepObj.imagePath;
                 stepObj.imagePath = null;
                 stepObj.imageName = null;
                 renderSteps();
                 autoSaveToLocalStorage();
+                if (pathToDelete) deleteFilesFromServer([pathToDelete]);
             }
         });
     }
@@ -348,11 +350,13 @@ function setupStepEvents(stepCard, step) {
             e.stopPropagation();
             const stepObj = steps.find(s => s.id === id);
             if (stepObj) {
+                const pathToDelete = stepObj.audioPath;
                 stepObj.audioPath = null;
                 stepObj.audioName = null;
                 stepObj.duration = null;
                 renderSteps();
                 autoSaveToLocalStorage();
+                if (pathToDelete) deleteFilesFromServer([pathToDelete]);
             }
         });
     }
@@ -381,10 +385,15 @@ function setupStepEvents(stepCard, step) {
     });
 
     stepCard.querySelector('.btn-delete-step').addEventListener('click', () => {
-        steps = steps.filter(s => s.id !== id);
-        renderSteps();
-        autoSaveToLocalStorage();
-        showToast('Đã xóa bước.');
+        const stepToDelete = steps.find(s => s.id === id);
+        if (stepToDelete) {
+            const paths = [stepToDelete.imagePath, stepToDelete.audioPath];
+            steps = steps.filter(s => s.id !== id);
+            renderSteps();
+            autoSaveToLocalStorage();
+            deleteFilesFromServer(paths);
+            showToast('Đã xóa bước và tệp nháp liên quan.');
+        }
     });
 }
 
@@ -608,6 +617,7 @@ function showSuccessState(videoUrl) {
     btnDownloadVideo.download = `video_render_${Date.now()}.mp4`;
     
     showToast('Video đã render hoàn tất!', 4000);
+    refreshExportsList();
 }
 
 function showFailedState(errorMessage) {
@@ -714,6 +724,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     renderSteps();
+    renderDraftsList();
+    refreshExportsList();
 
     // Event Listeners
     btnAddStep.addEventListener('click', () => {
@@ -739,9 +751,13 @@ document.addEventListener('DOMContentLoaded', () => {
     btnGenerateVideo.addEventListener('click', generateVideo);
     document.addEventListener('paste', handlePasteImage);
     
-    btnSaveProject.addEventListener('click', saveProject);
+    btnSaveProject.addEventListener('click', saveAsDraft);
     btnLoadProject.addEventListener('click', triggerLoadProject);
     projectFileInput.addEventListener('change', handleLoadProject);
+
+    // Library action buttons
+    document.getElementById('btn-new-draft').addEventListener('click', createNewDraft);
+    document.getElementById('btn-refresh-exports').addEventListener('click', refreshExportsList);
 
     // Modal close listeners
     const closeModalHandler = () => {
@@ -763,3 +779,354 @@ document.addEventListener('DOMContentLoaded', () => {
         radio.addEventListener('change', autoSaveToLocalStorage);
     });
 });
+
+// --- Drafts & Exports Management ---
+
+const DRAFTS_KEY = 'videomaker_drafts_list';
+let currentActiveDraftId = null;
+
+// Helper function to delete files from server
+async function deleteFilesFromServer(filePaths) {
+    const paths = filePaths.filter(p => p);
+    if (paths.length === 0) return;
+
+    try {
+        const response = await fetch('/api/delete-files', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: paths })
+        });
+        const result = await response.json();
+        console.log('Cleaned files from server:', result);
+    } catch (err) {
+        console.error('Failed to delete files from server:', err);
+    }
+}
+
+// Save current project state as a draft in DRAFTS_KEY
+function saveAsDraft() {
+    if (steps.length === 0) {
+        showToast('Project của bạn rỗng!');
+        return;
+    }
+
+    const resolution = document.querySelector('input[name="resolution"]:checked').value;
+    const imageFit = document.querySelector('input[name="imageFit"]:checked').value;
+
+    const draftName = prompt('Nhập tên cho bản nháp này:', currentActiveDraftId ? '' : `Bản nháp ${new Date().toLocaleString('vi-VN')}`);
+    if (draftName === null) return; // cancelled
+
+    const savedDrafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]');
+    
+    const draftData = {
+        id: currentActiveDraftId || 'draft-' + Date.now(),
+        name: draftName.trim() || `Bản nháp ${new Date().toLocaleString('vi-VN')}`,
+        steps: JSON.parse(JSON.stringify(steps)), // deep copy
+        resolution,
+        imageFit,
+        updatedAt: Date.now()
+    };
+
+    if (currentActiveDraftId) {
+        const index = savedDrafts.findIndex(d => d.id === currentActiveDraftId);
+        if (index !== -1) {
+            // If they left the name blank, keep the old name
+            if (!draftName.trim()) {
+                draftData.name = savedDrafts[index].name;
+            }
+            savedDrafts[index] = draftData;
+        } else {
+            savedDrafts.push(draftData);
+        }
+    } else {
+        savedDrafts.push(draftData);
+        currentActiveDraftId = draftData.id;
+    }
+
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(savedDrafts));
+    showToast('Đã lưu bản nháp thành công!');
+    renderDraftsList();
+    autoSaveToLocalStorage();
+}
+
+// Render the Drafts list in UI
+function renderDraftsList() {
+    const container = document.getElementById('drafts-list-container');
+    if (!container) return;
+
+    const drafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]');
+    
+    if (drafts.length === 0) {
+        container.innerHTML = `
+            <div class="library-empty">
+                <i class="fa-solid fa-file-signature"></i>
+                <p>Chưa có bản nháp nào được lưu.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Sort by updatedAt descending
+    drafts.sort((a, b) => b.updatedAt - a.updatedAt);
+
+    container.innerHTML = drafts.map(draft => {
+        const dateStr = new Date(draft.updatedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+        const isActive = draft.id === currentActiveDraftId ? '<span class="step-count" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: #86efac; margin-right: 4px;">Đang chỉnh sửa</span>' : '';
+        return `
+            <div class="library-item" data-id="${draft.id}">
+                <div class="item-info">
+                    <div class="item-title" title="${draft.name}">${draft.name}</div>
+                    <div class="item-meta">
+                        <span><i class="fa-solid fa-layer-group"></i> ${draft.steps.length} bước</span>
+                        <span><i class="fa-solid fa-clock"></i> ${dateStr}</span>
+                        ${isActive}
+                    </div>
+                </div>
+                <div class="item-actions">
+                    <button class="btn-icon btn-load-draft" title="Tiếp tục làm bản nháp này" onclick="loadDraft('${draft.id}')">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </button>
+                    <button class="btn-icon btn-danger-hover" title="Xóa bản nháp (Xóa toàn bộ ảnh/voice nháp liên quan)" onclick="deleteDraft('${draft.id}')">
+                        <i class="fa-regular fa-trash-can"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Load a draft into the editor
+function loadDraft(draftId) {
+    const drafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]');
+    const draft = drafts.find(d => d.id === draftId);
+    if (!draft) return;
+
+    // Confirm overwrite if there are changes
+    if (steps.length > 0 && steps.some(s => s.imagePath || s.audioPath)) {
+        if (!confirm('Bạn có chắc chắn muốn tải bản nháp này? Cấu hình đang soạn thảo hiện tại sẽ bị ghi đè.')) {
+            return;
+        }
+    }
+
+    steps = JSON.parse(JSON.stringify(draft.steps));
+    currentActiveDraftId = draft.id;
+
+    // Set resolution radio
+    if (draft.resolution) {
+        const radio = document.querySelector(`input[name="resolution"][value="${draft.resolution}"]`);
+        if (radio) radio.checked = true;
+    }
+    // Set image fit radio
+    if (draft.imageFit) {
+        const radio = document.querySelector(`input[name="imageFit"][value="${draft.imageFit}"]`);
+        if (radio) radio.checked = true;
+    }
+
+    renderSteps();
+    autoSaveToLocalStorage();
+    renderDraftsList();
+    showToast(`Đã tải bản nháp: ${draft.name}`);
+}
+
+// Delete a draft and clean up its files from the server
+async function deleteDraft(draftId) {
+    const drafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]');
+    const draftIndex = drafts.findIndex(d => d.id === draftId);
+    if (draftIndex === -1) return;
+
+    const draftName = drafts[draftIndex].name;
+    if (!confirm(`Bạn có chắc chắn muốn xóa bản nháp "${draftName}"?\nTất cả hình ảnh và âm thanh của bản nháp này sẽ bị xóa khỏi máy chủ.`)) {
+        return;
+    }
+
+    const draft = drafts[draftIndex];
+    // Collect all files to delete
+    const filePaths = [];
+    draft.steps.forEach(step => {
+        if (step.imagePath) filePaths.push(step.imagePath);
+        if (step.audioPath) filePaths.push(step.audioPath);
+    });
+
+    // Remove from localStorage
+    drafts.splice(draftIndex, 1);
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+
+    if (currentActiveDraftId === draftId) {
+        currentActiveDraftId = null;
+    }
+
+    renderDraftsList();
+    showToast('Đã xóa bản nháp.');
+
+    // Delete files from server
+    await deleteFilesFromServer(filePaths);
+}
+
+// Create a new blank draft (reset editor)
+function createNewDraft() {
+    if (steps.length > 0 && steps.some(s => s.imagePath || s.audioPath)) {
+        if (!confirm('Bạn có muốn tạo bản nháp mới? Cấu hình chưa lưu trên bảng chỉnh sửa hiện tại sẽ bị mất.')) {
+            return;
+        }
+    }
+
+    currentActiveDraftId = null;
+    steps = [{
+        id: generateUniqueId(),
+        imagePath: null,
+        imageName: null,
+        audioPath: null,
+        audioName: null,
+        duration: null,
+        transition: 'none'
+    }];
+
+    renderSteps();
+    autoSaveToLocalStorage();
+    renderDraftsList();
+    showToast('Đã tạo bản soạn thảo mới.');
+}
+
+// Fetch and render the list of exported videos
+async function refreshExportsList() {
+    const container = document.getElementById('exports-list-container');
+    if (!container) return;
+
+    try {
+        const response = await fetch('/api/exports');
+        if (!response.ok) throw new Error('Failed to fetch exports');
+        
+        const videos = await response.json();
+
+        if (videos.length === 0) {
+            container.innerHTML = `
+                <div class="library-empty">
+                    <i class="fa-solid fa-film"></i>
+                    <p>Chưa có video nào được xuất.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = videos.map(video => {
+            const dateStr = new Date(video.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+            const sizeStr = (video.size / (1024 * 1024)).toFixed(2) + ' MB';
+            const displayTitle = video.filename.replace('.mp4', '');
+
+            return `
+                <div class="library-item" data-filename="${video.filename}">
+                    <div class="item-info">
+                        <div class="item-title-wrapper" style="width:100%">
+                            <div class="item-title" id="title-display-${video.filename}" title="${displayTitle}">${displayTitle}</div>
+                        </div>
+                        <div class="item-meta">
+                            <span><i class="fa-solid fa-hdd"></i> ${sizeStr}</span>
+                            <span><i class="fa-solid fa-calendar-day"></i> ${dateStr}</span>
+                        </div>
+                    </div>
+                    <div class="item-actions">
+                        <button class="btn-icon" title="Xem thử Video" onclick="previewExportedVideo('${video.url}')">
+                            <i class="fa-regular fa-circle-play"></i>
+                        </button>
+                        <a href="${video.url}" download="${video.filename}" class="btn-icon" title="Tải xuống Video">
+                            <i class="fa-solid fa-download"></i>
+                        </a>
+                        <button class="btn-icon" title="Đổi tên Video" onclick="renameExportedVideo('${video.filename}')">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button class="btn-icon btn-danger-hover" title="Xóa Video khỏi Google Drive" onclick="deleteExportedVideo('${video.filename}')">
+                            <i class="fa-regular fa-trash-can"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+    } catch (err) {
+        console.error(err);
+        container.innerHTML = `
+            <div class="library-empty" style="color: var(--danger)">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <p>Lỗi tải danh sách video: ${err.message}</p>
+            </div>
+        `;
+    }
+}
+
+// Preview an exported video in the modal player
+function previewExportedVideo(videoUrl) {
+    exportModal.classList.add('open');
+    modalProcessingState.style.display = 'none';
+    modalFailedState.style.display = 'none';
+    modalSuccessState.style.display = 'block';
+    btnCloseModal.style.display = 'flex';
+
+    finalVideoPlayer.src = videoUrl;
+    btnDownloadVideo.href = videoUrl;
+    btnDownloadVideo.download = videoUrl.substring(videoUrl.lastIndexOf('/') + 1);
+}
+
+// Rename an exported video file on server
+async function renameExportedVideo(filename) {
+    const displayElement = document.getElementById(`title-display-${filename}`);
+    if (!displayElement) return;
+
+    const currentTitle = displayElement.textContent;
+    const newTitle = prompt('Nhập tên mới cho video (không cần đuôi .mp4):', currentTitle);
+    if (newTitle === null || !newTitle.trim()) return;
+
+    const cleanNewTitle = newTitle.trim();
+    if (cleanNewTitle === currentTitle) return;
+
+    try {
+        const response = await fetch('/api/exports/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ oldFilename: filename, newFilename: cleanNewTitle })
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+            showToast('Đã đổi tên video thành công!');
+            refreshExportsList();
+        } else {
+            throw new Error(data.error || 'Failed to rename');
+        }
+    } catch (e) {
+        console.error(e);
+        alert(`Lỗi đổi tên: ${e.message}`);
+    }
+}
+
+// Delete an exported video file from server
+async function deleteExportedVideo(filename) {
+    if (!confirm(`Bạn có chắc chắn muốn xóa video "${filename}" khỏi Google Drive? Hành động này không thể hoàn tác.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/exports/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename })
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+            showToast('Đã xóa video thành công!');
+            refreshExportsList();
+        } else {
+            throw new Error(data.error || 'Failed to delete');
+        }
+    } catch (e) {
+        console.error(e);
+        alert(`Lỗi xóa file: ${e.message}`);
+    }
+}
+
+// Attach functions to window for onclick callbacks
+window.loadDraft = loadDraft;
+window.deleteDraft = deleteDraft;
+window.previewExportedVideo = previewExportedVideo;
+window.renameExportedVideo = renameExportedVideo;
+window.deleteExportedVideo = deleteExportedVideo;

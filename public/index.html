@@ -136,6 +136,37 @@
                 </div>
             </section>
         </main>
+
+        <!-- Library & History Section -->
+        <section class="library-section">
+            <div class="library-grid">
+                <!-- Drafts Column -->
+                <div class="glass-card library-card drafts-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-file-pen"></i> Bản nháp đã lưu</h3>
+                        <button id="btn-new-draft" class="btn btn-secondary btn-sm" title="Tạo bản nháp mới (Xóa trắng bảng chỉnh sửa)">
+                            <i class="fa-solid fa-file-circle-plus"></i> Bản nháp mới
+                        </button>
+                    </div>
+                    <div class="drafts-list" id="drafts-list-container">
+                        <!-- Drafts list will be injected here -->
+                    </div>
+                </div>
+
+                <!-- Exported Videos Column -->
+                <div class="glass-card library-card exports-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-photo-film"></i> Video đã xuất</h3>
+                        <button id="btn-refresh-exports" class="btn btn-secondary btn-sm" title="Làm mới danh sách video">
+                            <i class="fa-solid fa-rotate"></i> Làm mới
+                        </button>
+                    </div>
+                    <div class="exports-list" id="exports-list-container">
+                        <!-- Exported videos list will be injected here -->
+                    </div>
+                </div>
+            </div>
+        </section>
     </div>
 
     <!-- Export Overlay Modal -->
