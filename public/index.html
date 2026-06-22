@@ -116,6 +116,39 @@
                         </div>
                     </div>
 
+                    <!-- Background Music Options -->
+                    <div class="control-group">
+                        <label class="control-label"><i class="fa-solid fa-music"></i> Nhạc nền (Background Music)</label>
+                        <div class="bgm-container">
+                            <div class="dropzone bgm-dropzone" id="bgm-dropzone" title="Click hoặc kéo thả để tải nhạc nền">
+                                <div class="bgm-upload-state" id="bgm-upload-state">
+                                    <i class="fa-solid fa-cloud-arrow-up dropzone-icon"></i>
+                                    <div class="dropzone-text">Tải lên nhạc nền</div>
+                                    <div class="dropzone-subtext">MP3, WAV, M4A</div>
+                                </div>
+                                <div class="bgm-preview-state" id="bgm-preview-state" style="display: none;">
+                                    <div class="audio-preview-content">
+                                        <i class="fa-solid fa-compact-disc audio-icon-glow fa-spin" style="animation-duration: 4s;"></i>
+                                        <span class="audio-filename" id="bgm-filename">bg_music.mp3</span>
+                                        <audio id="bgm-player" controls></audio>
+                                    </div>
+                                    <button class="btn-remove-file" id="btn-remove-bgm" title="Xóa nhạc nền">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                                <input type="file" id="file-input-bgm" accept="audio/*" style="display: none;">
+                            </div>
+                            
+                            <div class="bgm-volume-control" id="bgm-volume-container" style="display: none; margin-top: 14px;">
+                                <div class="volume-label-row">
+                                    <span><i class="fa-solid fa-volume-high"></i> Âm lượng nhạc nền:</span>
+                                    <span class="volume-value" id="bgm-volume-value">15%</span>
+                                </div>
+                                <input type="range" id="bgm-volume-slider" min="0" max="100" value="15" class="volume-slider">
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Generate Action Button -->
                     <div class="generate-action">
                         <button id="btn-generate-video" class="btn btn-primary btn-large btn-block">

@@ -3,6 +3,11 @@ let steps = [];
 let activeJobId = null;
 let pollInterval = null;
 let activeImageStepId = null;
+let backgroundMusic = {
+    path: null,
+    name: null,
+    volume: 0.15
+};
 
 // DOM Elements
 const stepsContainer = document.getElementById('steps-container');
@@ -13,6 +18,18 @@ const totalDurationBadge = document.createElement('span');
 const btnSaveProject = document.getElementById('btn-save-project');
 const btnLoadProject = document.getElementById('btn-load-project');
 const projectFileInput = document.getElementById('project-file-input');
+
+// Background Music DOM Elements
+const bgmDropzone = document.getElementById('bgm-dropzone');
+const fileInputBgm = document.getElementById('file-input-bgm');
+const bgmUploadState = document.getElementById('bgm-upload-state');
+const bgmPreviewState = document.getElementById('bgm-preview-state');
+const bgmFilename = document.getElementById('bgm-filename');
+const bgmPlayer = document.getElementById('bgm-player');
+const btnRemoveBgm = document.getElementById('btn-remove-bgm');
+const bgmVolumeContainer = document.getElementById('bgm-volume-container');
+const bgmVolumeSlider = document.getElementById('bgm-volume-slider');
+const bgmVolumeValue = document.getElementById('bgm-volume-value');
 
 // Modal Elements
 const exportModal = document.getElementById('export-modal');
@@ -58,7 +75,8 @@ function autoSaveToLocalStorage() {
     const projectState = {
         steps,
         resolution,
-        imageFit
+        imageFit,
+        backgroundMusic
     };
     localStorage.setItem('videomaker_project_state', JSON.stringify(projectState));
 }
@@ -81,6 +99,14 @@ function loadFromLocalStorage() {
                 const radio = document.querySelector(`input[name="imageFit"][value="${state.imageFit}"]`);
                 if (radio) radio.checked = true;
             }
+
+            // Load background music
+            if (state.backgroundMusic) {
+                backgroundMusic = state.backgroundMusic;
+            } else {
+                backgroundMusic = { path: null, name: null, volume: 0.15 };
+            }
+            updateBgmUI();
         } catch (e) {
             console.error('Failed to parse saved state', e);
         }
@@ -514,6 +540,74 @@ async function uploadFile(file, stepId, type) {
     }
 }
 
+// Update Background Music UI Elements
+function updateBgmUI() {
+    bgmUploadState.innerHTML = `
+        <i class="fa-solid fa-cloud-arrow-up dropzone-icon"></i>
+        <div class="dropzone-text">Tải lên nhạc nền</div>
+        <div class="dropzone-subtext">MP3, WAV, M4A</div>
+    `;
+
+    if (backgroundMusic && backgroundMusic.path) {
+        bgmUploadState.style.display = 'none';
+        bgmPreviewState.style.display = 'flex';
+        bgmFilename.textContent = backgroundMusic.name || 'bg_music.mp3';
+        bgmPlayer.src = '/' + backgroundMusic.path;
+        bgmVolumeContainer.style.display = 'block';
+        
+        const volVal = Math.round(backgroundMusic.volume * 100);
+        bgmVolumeSlider.value = volVal;
+        bgmVolumeValue.textContent = volVal + '%';
+    } else {
+        bgmUploadState.style.display = 'flex';
+        bgmPreviewState.style.display = 'none';
+        bgmVolumeContainer.style.display = 'none';
+        bgmPlayer.pause();
+        bgmPlayer.src = '';
+    }
+}
+
+// Upload Background Music File
+async function uploadBgmFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    bgmUploadState.innerHTML = `
+        <div class="preview-container" style="background: rgba(14,20,35,0.85); position: static; height: auto;">
+            <i class="fa-solid fa-spinner fa-spin" style="font-size: 20px; color: var(--primary); margin-bottom: 6px;"></i>
+            <div class="dropzone-text">Đang tải nhạc nền...</div>
+        </div>
+    `;
+
+    try {
+        const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error('Upload failed on server');
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+            backgroundMusic.path = data.path;
+            backgroundMusic.name = file.name;
+            updateBgmUI();
+            autoSaveToLocalStorage();
+            showToast('Đã tải lên nhạc nền thành công.');
+        } else {
+            showToast('Lỗi: Tải nhạc nền thất bại.');
+            updateBgmUI();
+        }
+    } catch (error) {
+        console.error('BGM upload error:', error);
+        showToast('Lỗi: Không thể kết nối tới máy chủ.');
+        updateBgmUI();
+    }
+}
+
 // --- Video Generation & Polling Lifecycle ---
 
 async function generateVideo() {
@@ -550,7 +644,7 @@ async function generateVideo() {
         const response = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ steps, resolution, imageFit })
+            body: JSON.stringify({ steps, resolution, imageFit, backgroundMusic })
         });
 
         if (!response.ok) {
@@ -645,7 +739,8 @@ function saveProject() {
         timestamp: Date.now(),
         steps,
         resolution,
-        imageFit
+        imageFit,
+        backgroundMusic
     };
 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projectData, null, 2));
@@ -682,6 +777,13 @@ function handleLoadProject(event) {
                     const radio = document.querySelector(`input[name="imageFit"][value="${state.imageFit}"]`);
                     if (radio) radio.checked = true;
                 }
+
+                if (state.backgroundMusic) {
+                    backgroundMusic = state.backgroundMusic;
+                } else {
+                    backgroundMusic = { path: null, name: null, volume: 0.15 };
+                }
+                updateBgmUI();
 
                 renderSteps();
                 autoSaveToLocalStorage();
@@ -778,6 +880,46 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('input[name="imageFit"]').forEach(radio => {
         radio.addEventListener('change', autoSaveToLocalStorage);
     });
+
+    // --- Background Music Events ---
+    if (bgmDropzone) {
+        bgmDropzone.addEventListener('click', (e) => {
+            if (e.target.closest('#btn-remove-bgm') || e.target.closest('#bgm-player')) return;
+            fileInputBgm.click();
+        });
+
+        fileInputBgm.addEventListener('change', () => {
+            if (fileInputBgm.files.length > 0) {
+                uploadBgmFile(fileInputBgm.files[0]);
+            }
+        });
+
+        setupDragDrop(bgmDropzone, (file) => uploadBgmFile(file));
+    }
+
+    if (btnRemoveBgm) {
+        btnRemoveBgm.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const pathToDelete = backgroundMusic.path;
+            backgroundMusic.path = null;
+            backgroundMusic.name = null;
+            updateBgmUI();
+            autoSaveToLocalStorage();
+            if (pathToDelete) deleteFilesFromServer([pathToDelete]);
+        });
+    }
+
+    if (bgmVolumeSlider) {
+        bgmVolumeSlider.addEventListener('input', (e) => {
+            const volVal = parseInt(e.target.value, 10);
+            bgmVolumeValue.textContent = volVal + '%';
+            backgroundMusic.volume = volVal / 100;
+        });
+
+        bgmVolumeSlider.addEventListener('change', () => {
+            autoSaveToLocalStorage();
+        });
+    }
 });
 
 // --- Drafts & Exports Management ---
@@ -824,6 +966,7 @@ function saveAsDraft() {
         steps: JSON.parse(JSON.stringify(steps)), // deep copy
         resolution,
         imageFit,
+        backgroundMusic: JSON.parse(JSON.stringify(backgroundMusic)),
         updatedAt: Date.now()
     };
 
@@ -922,6 +1065,14 @@ function loadDraft(draftId) {
         if (radio) radio.checked = true;
     }
 
+    // Load background music
+    if (draft.backgroundMusic) {
+        backgroundMusic = JSON.parse(JSON.stringify(draft.backgroundMusic));
+    } else {
+        backgroundMusic = { path: null, name: null, volume: 0.15 };
+    }
+    updateBgmUI();
+
     renderSteps();
     autoSaveToLocalStorage();
     renderDraftsList();
@@ -946,6 +1097,9 @@ async function deleteDraft(draftId) {
         if (step.imagePath) filePaths.push(step.imagePath);
         if (step.audioPath) filePaths.push(step.audioPath);
     });
+    if (draft.backgroundMusic && draft.backgroundMusic.path) {
+        filePaths.push(draft.backgroundMusic.path);
+    }
 
     // Remove from localStorage
     drafts.splice(draftIndex, 1);
@@ -980,6 +1134,9 @@ function createNewDraft() {
         duration: null,
         transition: 'none'
     }];
+
+    backgroundMusic = { path: null, name: null, volume: 0.15 };
+    updateBgmUI();
 
     renderSteps();
     autoSaveToLocalStorage();

@@ -65,6 +65,17 @@ function getAudioDuration(filePath) {
     });
 }
 
+// Helper: Safely resolve relative/absolute paths within the project directory
+function getSafeAbsPath(userPath) {
+    if (!userPath) return null;
+    const absPath = path.isAbsolute(userPath) ? path.resolve(userPath) : path.resolve(__dirname, userPath);
+    const rootDir = path.resolve(__dirname);
+    if (absPath.startsWith(rootDir)) {
+        return absPath;
+    }
+    return null;
+}
+
 const TRANSITION_DURATION = 0.5;
 const FLASH_TRANSITION_DURATION = 0.16;
 const MOTION_FADE_DURATION = 0.25;
@@ -197,7 +208,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
 // Endpoint: Trigger video generation
 app.post('/api/generate', (req, res) => {
-    const { steps, resolution, imageFit } = req.body;
+    const { steps, resolution, imageFit, backgroundMusic } = req.body;
 
     if (!steps || !Array.isArray(steps) || steps.length === 0) {
         return res.status(400).json({ error: 'Steps are required and must be an array' });
@@ -220,7 +231,7 @@ app.post('/api/generate', (req, res) => {
     };
 
     // Run processing asynchronously
-    processVideoJob(jobId, steps, width, height, fit);
+    processVideoJob(jobId, steps, width, height, fit, backgroundMusic);
 
     res.json({ success: true, jobId });
 });
@@ -381,7 +392,7 @@ app.post('/api/exports/delete', (req, res) => {
 });
 
 // Async function to handle video rendering and concatenation
-async function processVideoJob(jobId, steps, width, height, fit) {
+async function processVideoJob(jobId, steps, width, height, fit, backgroundMusic) {
     const job = jobs[jobId];
     const tempFiles = [];
 
@@ -399,8 +410,15 @@ async function processVideoJob(jobId, steps, width, height, fit) {
             job.progress = Math.round((stepIndex / steps.length) * 85);
 
             // Absolute paths
-            const imgAbsPath = path.join(__dirname, step.imagePath);
-            const audioAbsPath = path.join(__dirname, step.audioPath);
+            const imgAbsPath = getSafeAbsPath(step.imagePath);
+            const audioAbsPath = getSafeAbsPath(step.audioPath);
+
+            if (!imgAbsPath || !fs.existsSync(imgAbsPath)) {
+                throw new Error(`Hình ảnh của bước ${stepIndex + 1} không tồn tại hoặc không hợp lệ.`);
+            }
+            if (!audioAbsPath || !fs.existsSync(audioAbsPath)) {
+                throw new Error(`Âm thanh của bước ${stepIndex + 1} không tồn tại hoặc không hợp lệ.`);
+            }
             const stepVideoFilename = `step_${jobId}_${stepIndex}.mp4`;
             const stepVideoAbsPath = path.join(TEMP_DIR, stepVideoFilename);
 
@@ -452,8 +470,17 @@ async function processVideoJob(jobId, steps, width, height, fit) {
             });
         }
 
+        // Validate background music path if provided
+        let bgMusicAbsPath = null;
+        if (backgroundMusic && backgroundMusic.path) {
+            const resolvedBgPath = getSafeAbsPath(backgroundMusic.path);
+            if (resolvedBgPath && fs.existsSync(resolvedBgPath)) {
+                bgMusicAbsPath = resolvedBgPath;
+            }
+        }
+
         // 2. Concatenate step videos
-        job.progress = 90;
+        job.progress = 88;
         console.log(`[Job ${jobId}] Concatenating segments...`);
 
         const concatTxtFilename = `concat_${jobId}.txt`;
@@ -464,12 +491,17 @@ async function processVideoJob(jobId, steps, width, height, fit) {
         const fileContent = renderedStepPaths.map(p => `file '${p}'`).join('\n');
         fs.writeFileSync(concatTxtAbsPath, fileContent, 'utf8');
 
-        // Output final video file
+        // Output intermediate/final video file
         const finalVideoFilename = `final_${jobId}.mp4`;
         const finalVideoAbsPath = path.join(EXPORTS_DIR, finalVideoFilename);
 
+        const intermediateVideoAbsPath = bgMusicAbsPath ? path.join(TEMP_DIR, `concat_raw_${jobId}.mp4`) : finalVideoAbsPath;
+        if (bgMusicAbsPath) {
+            tempFiles.push(intermediateVideoAbsPath);
+        }
+
         // Run concat demuxer (cwd set to TEMP_DIR so we can use relative filenames safely)
-        const concatCmd = `"${ffmpegPath}" -y -f concat -safe 0 -i "${concatTxtFilename}" -c copy "${finalVideoAbsPath}"`;
+        const concatCmd = `"${ffmpegPath}" -y -f concat -safe 0 -i "${concatTxtFilename}" -c copy "${intermediateVideoAbsPath}"`;
 
         await new Promise((resolve, reject) => {
             exec(concatCmd, { cwd: TEMP_DIR, maxBuffer: 1024 * 1024 * 20 }, (err, stdout, stderr) => {
@@ -482,7 +514,28 @@ async function processVideoJob(jobId, steps, width, height, fit) {
             });
         });
 
-        // 3. Mark complete
+        // 3. Mix Background Music if provided
+        if (bgMusicAbsPath) {
+            job.progress = 95;
+            console.log(`[Job ${jobId}] Mixing background music...`);
+            const bgVolume = parseFloat(backgroundMusic.volume);
+            const safeVolume = (isNaN(bgVolume) || bgVolume < 0) ? 0.15 : bgVolume;
+
+            const mixCmd = `"${ffmpegPath}" -y -i "${intermediateVideoAbsPath}" -stream_loop -1 -i "${bgMusicAbsPath}" -filter_complex "[1:a]volume=${safeVolume}[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[a]" -map 0:v -map "[a]" -c:v copy -c:a aac -ar 48000 -ac 2 -b:a 192k "${finalVideoAbsPath}"`;
+
+            await new Promise((resolve, reject) => {
+                exec(mixCmd, { maxBuffer: 1024 * 1024 * 20 }, (err, stdout, stderr) => {
+                    if (err) {
+                        console.error(`[Job ${jobId}] Mix error:`, stderr);
+                        reject(new Error(`Failed to mix background music: ${err.message}`));
+                    } else {
+                        resolve();
+                    }
+                });
+            });
+        }
+
+        // 4. Mark complete
         job.progress = 100;
         job.status = 'completed';
         job.videoUrl = `/exports/${finalVideoFilename}`;
