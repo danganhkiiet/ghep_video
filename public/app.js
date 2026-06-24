@@ -71,12 +71,16 @@ function generateUniqueId() {
 function autoSaveToLocalStorage() {
     const resolution = document.querySelector('input[name="resolution"]:checked').value;
     const imageFit = document.querySelector('input[name="imageFit"]:checked').value;
+    const stripMetadata = document.getElementById('opt-strip-metadata')?.checked || false;
+    const addGrain = document.getElementById('opt-add-grain')?.checked || false;
     
     const projectState = {
         steps,
         resolution,
         imageFit,
-        backgroundMusic
+        backgroundMusic,
+        stripMetadata,
+        addGrain
     };
     localStorage.setItem('videomaker_project_state', JSON.stringify(projectState));
 }
@@ -98,6 +102,16 @@ function loadFromLocalStorage() {
             if (state.imageFit) {
                 const radio = document.querySelector(`input[name="imageFit"][value="${state.imageFit}"]`);
                 if (radio) radio.checked = true;
+            }
+
+            // Set checkboxes
+            const stripMetEl = document.getElementById('opt-strip-metadata');
+            if (stripMetEl) {
+                stripMetEl.checked = state.stripMetadata !== undefined ? state.stripMetadata : true;
+            }
+            const addGrainEl = document.getElementById('opt-add-grain');
+            if (addGrainEl) {
+                addGrainEl.checked = state.addGrain !== undefined ? state.addGrain : false;
             }
 
             // Load background music
@@ -625,6 +639,8 @@ async function generateVideo() {
 
     const resolution = document.querySelector('input[name="resolution"]:checked').value;
     const imageFit = document.querySelector('input[name="imageFit"]:checked').value;
+    const stripMetadata = document.getElementById('opt-strip-metadata')?.checked || false;
+    const addGrain = document.getElementById('opt-add-grain')?.checked || false;
 
     // 2. Open modal and show processing view
     exportModal.classList.add('open');
@@ -644,7 +660,7 @@ async function generateVideo() {
         const response = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ steps, resolution, imageFit, backgroundMusic })
+            body: JSON.stringify({ steps, resolution, imageFit, backgroundMusic, stripMetadata, addGrain })
         });
 
         if (!response.ok) {
@@ -733,6 +749,8 @@ function saveProject() {
     
     const resolution = document.querySelector('input[name="resolution"]:checked').value;
     const imageFit = document.querySelector('input[name="imageFit"]:checked').value;
+    const stripMetadata = document.getElementById('opt-strip-metadata')?.checked || false;
+    const addGrain = document.getElementById('opt-add-grain')?.checked || false;
 
     const projectData = {
         version: '1.0.0',
@@ -740,7 +758,9 @@ function saveProject() {
         steps,
         resolution,
         imageFit,
-        backgroundMusic
+        backgroundMusic,
+        stripMetadata,
+        addGrain
     };
 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projectData, null, 2));
@@ -776,6 +796,16 @@ function handleLoadProject(event) {
                 if (state.imageFit) {
                     const radio = document.querySelector(`input[name="imageFit"][value="${state.imageFit}"]`);
                     if (radio) radio.checked = true;
+                }
+
+                // Set checkboxes
+                const stripMetEl = document.getElementById('opt-strip-metadata');
+                if (stripMetEl) {
+                    stripMetEl.checked = state.stripMetadata !== undefined ? state.stripMetadata : true;
+                }
+                const addGrainEl = document.getElementById('opt-add-grain');
+                if (addGrainEl) {
+                    addGrainEl.checked = state.addGrain !== undefined ? state.addGrain : false;
                 }
 
                 if (state.backgroundMusic) {
@@ -880,6 +910,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('input[name="imageFit"]').forEach(radio => {
         radio.addEventListener('change', autoSaveToLocalStorage);
     });
+
+    document.getElementById('opt-strip-metadata')?.addEventListener('change', autoSaveToLocalStorage);
+    document.getElementById('opt-add-grain')?.addEventListener('change', autoSaveToLocalStorage);
 
     // --- Background Music Events ---
     if (bgmDropzone) {

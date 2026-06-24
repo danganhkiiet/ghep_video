@@ -149,6 +149,28 @@
                         </div>
                     </div>
 
+                    <!-- Publishing Optimization Options -->
+                    <div class="control-group">
+                        <label class="control-label"><i class="fa-solid fa-shield-halved"></i> Tối ưu hóa đăng tải & Chống quét AI</label>
+                        <div class="optimize-options">
+                            <label class="checkbox-option">
+                                <input type="checkbox" id="opt-strip-metadata" checked>
+                                <span class="checkbox-text">
+                                    <strong>Xóa siêu dữ liệu (Metadata)</strong>
+                                    <span class="checkbox-desc">Loại bỏ thông tin C2PA, tác giả, thiết bị và phần mềm tạo AI nhúng trong file.</span>
+                                </span>
+                            </label>
+                            
+                            <label class="checkbox-option">
+                                <input type="checkbox" id="opt-add-grain">
+                                <span class="checkbox-text">
+                                    <strong>Thêm hạt nhiễu phim (Film Grain)</strong>
+                                    <span class="checkbox-desc">Thêm lớp noise động mỏng để làm nhiễu loạn các pixel watermark ẩn (như SynthID).</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
                     <!-- Generate Action Button -->
                     <div class="generate-action">
                         <button id="btn-generate-video" class="btn btn-primary btn-large btn-block">

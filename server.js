@@ -208,7 +208,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
 // Endpoint: Trigger video generation
 app.post('/api/generate', (req, res) => {
-    const { steps, resolution, imageFit, backgroundMusic } = req.body;
+    const { steps, resolution, imageFit, backgroundMusic, stripMetadata, addGrain } = req.body;
 
     if (!steps || !Array.isArray(steps) || steps.length === 0) {
         return res.status(400).json({ error: 'Steps are required and must be an array' });
@@ -231,7 +231,7 @@ app.post('/api/generate', (req, res) => {
     };
 
     // Run processing asynchronously
-    processVideoJob(jobId, steps, width, height, fit, backgroundMusic);
+    processVideoJob(jobId, steps, width, height, fit, backgroundMusic, stripMetadata, addGrain);
 
     res.json({ success: true, jobId });
 });
@@ -392,7 +392,7 @@ app.post('/api/exports/delete', (req, res) => {
 });
 
 // Async function to handle video rendering and concatenation
-async function processVideoJob(jobId, steps, width, height, fit, backgroundMusic) {
+async function processVideoJob(jobId, steps, width, height, fit, backgroundMusic, stripMetadata, addGrain) {
     const job = jobs[jobId];
     const tempFiles = [];
 
@@ -450,13 +450,21 @@ async function processVideoJob(jobId, steps, width, height, fit, backgroundMusic
                 addTransitionOutFilters(stepVfFilters, stepAfFilters, step.transition, duration);
             }
 
+            // Apply film grain noise if requested to disrupt invisible AI watermarks like SynthID
+            if (addGrain) {
+                stepVfFilters.push('noise=alls=7:allf=t');
+            }
+
             const vfFilterString = stepVfFilters.join(',');
             const afFilterString = stepAfFilters.length > 0 ? `-af "${stepAfFilters.join(',')}"` : '';
+
+            // Strip metadata if requested
+            const metadataFlag = stripMetadata ? '-map_metadata -1 -map_metadata:s:v -1 -map_metadata:s:a -1' : '';
 
             console.log(`[Job ${jobId}] Rendering step ${stepIndex} with duration ${duration}s...`);
 
             // ffmpeg command to create step video segment with visually lossless quality (CRF 18) and high quality audio (48kHz)
-            const renderCmd = `"${ffmpegPath}" -y -loop 1 -r 30 -i "${imgAbsPath}" -i "${audioAbsPath}" -vf "${vfFilterString}" ${afFilterString} -c:v libx264 -crf 18 -preset medium -c:a aac -ar 48000 -ac 2 -b:a 192k -pix_fmt yuv420p -t ${duration} "${stepVideoAbsPath}"`;
+            const renderCmd = `"${ffmpegPath}" -y -loop 1 -r 30 -i "${imgAbsPath}" -i "${audioAbsPath}" -vf "${vfFilterString}" ${afFilterString} -c:v libx264 -crf 18 -preset medium -c:a aac -ar 48000 -ac 2 -b:a 192k -pix_fmt yuv420p ${metadataFlag} -t ${duration} "${stepVideoAbsPath}"`;
 
             await new Promise((resolve, reject) => {
                 exec(renderCmd, { maxBuffer: 1024 * 1024 * 20 }, (err, stdout, stderr) => {
@@ -500,8 +508,10 @@ async function processVideoJob(jobId, steps, width, height, fit, backgroundMusic
             tempFiles.push(intermediateVideoAbsPath);
         }
 
+        const metadataFlag = stripMetadata ? '-map_metadata -1' : '';
+
         // Run concat demuxer (cwd set to TEMP_DIR so we can use relative filenames safely)
-        const concatCmd = `"${ffmpegPath}" -y -f concat -safe 0 -i "${concatTxtFilename}" -c copy "${intermediateVideoAbsPath}"`;
+        const concatCmd = `"${ffmpegPath}" -y -f concat -safe 0 -i "${concatTxtFilename}" -c copy ${metadataFlag} "${intermediateVideoAbsPath}"`;
 
         await new Promise((resolve, reject) => {
             exec(concatCmd, { cwd: TEMP_DIR, maxBuffer: 1024 * 1024 * 20 }, (err, stdout, stderr) => {
@@ -521,7 +531,7 @@ async function processVideoJob(jobId, steps, width, height, fit, backgroundMusic
             const bgVolume = parseFloat(backgroundMusic.volume);
             const safeVolume = (isNaN(bgVolume) || bgVolume < 0) ? 0.15 : bgVolume;
 
-            const mixCmd = `"${ffmpegPath}" -y -i "${intermediateVideoAbsPath}" -stream_loop -1 -i "${bgMusicAbsPath}" -filter_complex "[1:a]volume=${safeVolume}[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[a]" -map 0:v -map "[a]" -c:v copy -c:a aac -ar 48000 -ac 2 -b:a 192k "${finalVideoAbsPath}"`;
+            const mixCmd = `"${ffmpegPath}" -y -i "${intermediateVideoAbsPath}" -stream_loop -1 -i "${bgMusicAbsPath}" -filter_complex "[1:a]volume=${safeVolume}[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[a]" -map 0:v -map "[a]" -c:v copy -c:a aac -ar 48000 -ac 2 -b:a 192k ${metadataFlag} "${finalVideoAbsPath}"`;
 
             await new Promise((resolve, reject) => {
                 exec(mixCmd, { maxBuffer: 1024 * 1024 * 20 }, (err, stdout, stderr) => {
